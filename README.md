@@ -5,7 +5,7 @@
 - cmake
 
 ## Cloning the Repository
-Run `git clone --recursive https://github.com/chrisroman/slab-allocator.git`.
+Run `git clone --recursive https://github.com/Derecho-Project/zerocopy-serialization.git`.
 This will get the `google/benchmark` and `Catch2` submodules.
 
 ## Compile and Run
