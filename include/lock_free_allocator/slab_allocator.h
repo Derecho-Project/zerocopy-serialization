@@ -67,6 +67,8 @@ struct SlabAllocator {
     constexpr SlabAllocator(const SlabAllocator& rhs) noexcept
     : internal_state(rhs.internal_state)
     {
+        std::cout << "Copying Slab Allocator from type: '" << typeid(T).name()
+            << "' to type: " << typeid(T).name() << std::endl;
     }
 
     // Template copy constructor
@@ -74,6 +76,8 @@ struct SlabAllocator {
     constexpr SlabAllocator(const SlabAllocator<U>& rhs) noexcept
     : internal_state(rhs.internal_state)
     {
+        std::cout << "Copying Slab Allocator from type: '" << typeid(T).name()
+            << "' to type: " << typeid(U).name() << std::endl;
     }
 
     [[nodiscard]]
