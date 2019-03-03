@@ -39,7 +39,7 @@ struct IntArrType {
   }
 };
 
-using ValueType = IntArrType;
+using ValueType = UInt64Type;
 
 using AllocatorType = SlabAllocator<ValueType>;
 
@@ -149,12 +149,12 @@ void testMultiSet() {
 void testMap() {
   map<ValueType, ValueType, less<ValueType>, SlabAllocator<pair<const ValueType, ValueType>>> container;
   string file_name = getFileName(container);
-  freopen(file_name.c_str(), "w", stdout);
+  //freopen(file_name.c_str(), "w", stdout);
   for (int i = 0; i < n; ++i) {
     container.insert({ValueType(i), ValueType(i)});
   }
   container.get_allocator().viewState();
-  fclose(stdout);
+  //fclose(stdout);
 }
 
 void testMultiMap() {
@@ -215,14 +215,14 @@ void testMultiMap() {
 
 int main(void)
 {
-  testVector();
-  testForwardList();
+  //testVector();
+  //testForwardList();
   testList();
-  testDeque();
-  testSet();
-  testMultiSet();
-  testMap();
-  testMultiMap();
+  //testDeque();
+  //testSet();
+  //testMultiSet();
+  //testMap();
+  //testMultiMap();
   // testUOSet();
   // testUOMultiSet();
   // testUOMap();

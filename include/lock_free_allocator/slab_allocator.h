@@ -56,19 +56,20 @@ struct SlabAllocator {
     // Default constructor
     SlabAllocator() : internal_state(new internal())
     {
+        std::cout << " Calling " << __PRETTY_FUNCTION__ << std::endl;
     }
 
     // Destructor
     ~SlabAllocator()
     {
+        std::cout << " Calling " << __PRETTY_FUNCTION__ << std::endl;
     }
 
     // Override implicit default copy constructor
     constexpr SlabAllocator(const SlabAllocator& rhs) noexcept
     : internal_state(rhs.internal_state)
     {
-        std::cout << "Copying Slab Allocator from type: '" << typeid(T).name()
-            << "' to type: " << typeid(T).name() << std::endl;
+        std::cout << " Calling " << __PRETTY_FUNCTION__ << std::endl;
     }
 
     // Template copy constructor
@@ -76,13 +77,14 @@ struct SlabAllocator {
     constexpr SlabAllocator(const SlabAllocator<U>& rhs) noexcept
     : internal_state(rhs.internal_state)
     {
-        std::cout << "Copying Slab Allocator from type: '" << typeid(T).name()
-            << "' to type: " << typeid(U).name() << std::endl;
+        std::cout << " Calling " << __PRETTY_FUNCTION__ << std::endl;
     }
 
     [[nodiscard]]
     T* allocate(std::size_t n)
     {
+        std::cout << " Calling " << __PRETTY_FUNCTION__ << " where [n = " << n << "]" << std::endl;
+
         int exponent = log2_int_ceil(n * sizeof(T));
 
         // Throw error if desired size to allocate is larger than supported
@@ -109,6 +111,10 @@ struct SlabAllocator {
 
     void deallocate(T* p, std::size_t n) noexcept
     {
+        std::cout << " Calling " << __PRETTY_FUNCTION__
+            << " where [p = " << (void*) p
+            << "] and [n = " << n << "]" << std::endl;;
+
         int exponent = log2_int_ceil(n * sizeof(T));
 
         if (exponent >= internal_state->MAX_ALLOCATORS) {
