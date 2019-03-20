@@ -1,3 +1,27 @@
+/*
+  Notes:
+  Use ffsll combined with atomic OR/AND and CAS loops for inserting things
+  in blocks
+
+  Use R/W locks for implementing resizing the vector
+  - Grab reader lock when trying to insert something into a block
+  - Grab a writer lock when trying to resize the block
+
+  union {
+    struct slab_md_and_block_md {
+      ...
+    };
+
+    struct just_block_md {
+      ...
+    }
+  } block_md
+
+  Blocks {
+    std:array<char, 64*sz> arr
+  }
+ */
+
 #pragma once
 
 #include <algorithm>
@@ -278,6 +302,7 @@ struct Slab {
   void deallocate(void* p) {
     // Pointers [p] have the form:
     // p = 64*sz*n + 64*sz*i + sz*j
+    //   = 64*sz*(n+i) + sz*j
     // where n is some integer (for alignment), i is the block that i lives in,
     // and j is the slot in the block
     int slot_num = (uint64_t(p) % (64*sz)) / sz;
