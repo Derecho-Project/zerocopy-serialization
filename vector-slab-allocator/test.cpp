@@ -8,7 +8,7 @@ int main(void)
 {
   Slab<size> slab = Slab<size>();
 
-  int const arr_sz = 100;
+  int const arr_sz = 1000;
   Block<size> *blocks = slab.blocks;
   std::array<ValueType*, arr_sz> entries;
 
@@ -18,8 +18,8 @@ int main(void)
     // Rewrite pointers if necessary
     if (did_resize) {
       for (int j = 0; j < i; ++j) {
-        entries[i] = (ValueType*) (
-              (char*)(entries[i]) +
+        entries[j] = (ValueType*) (
+              (char*)(entries[j]) +
               ((uint64_t(new_blocks)) - (uint64_t(blocks)))
         );
       }

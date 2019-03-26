@@ -15,6 +15,10 @@ void bit_clear(uint64_t& num, int n) {
   num &= ~(1ULL << (n-1));
 }
 
+void bit_set(uint64_t& num, int n) {
+  num |= 1ULL << (n-1);
+}
+
 // Forward Declarations
 struct SlabMD;
 template <size_t sz> struct BlockMD;
@@ -36,19 +40,19 @@ struct SlabMD {
 template <size_t sz>
 struct BlockMD {
   Slab<sz> *start;
-  uint64_t free_slots;
+  uint64_t free_slot_list;
 
   BlockMD()
-    : start(nullptr), free_slots(-1ULL)
+    : start(nullptr), free_slot_list(-1ULL)
   { }
 
   BlockMD(Slab<sz> *s, size_t md_sz)
-    : start(s), free_slots(-1ULL)
+    : start(s), free_slot_list(-1ULL)
   {
     // TODO: Can probably do this completely constexpr
     int num_taken = std::max(1UL, md_sz / sz);
     for (int i = 0; i < num_taken; ++i) {
-      bit_clear(free_slots, i+1);
+      bit_clear(free_slot_list, i+1);
     }
   }
 };
@@ -90,21 +94,21 @@ struct Block {
   }
 
   bool is_full() {
-    return this->get_block_md()->free_slots == 0;
+    return this->get_block_md()->free_slot_list == 0;
   }
 
   // Returns the pointer into the actual data
   std::pair<void*, bool> find_free_slot() {
     // Note: returns the position as 1-indexed from the right (LSB)
     BlockMD<sz> *bmd = this->get_block_md();
-    int free_slot_pos = ffsll(bmd->free_slots);
+    int free_slot_pos = ffsll(bmd->free_slot_list);
     assert(free_slot_pos != 0 && "No free slot found when calling find_free_slot");
 
-    bit_clear(bmd->free_slots, free_slot_pos);
+    bit_clear(bmd->free_slot_list, free_slot_pos);
 
     void *ret = &data[0] + (free_slot_pos - 1)*sz;
 
-    return {ret, bmd->free_slots == 0};
+    return {ret, bmd->free_slot_list == 0};
   }
 };
 
@@ -119,6 +123,7 @@ struct Slab {
   Slab() {
     posix_memalign((void**)&blocks, 64*sz, sizeof(Block<sz>));
     blocks[0].initialize_head(this);
+    std::cout << "Slab starts at address " << (void*)this << std::endl;
   }
 
   std::tuple<void*, bool, void*> allocate() {
@@ -172,7 +177,19 @@ struct Slab {
     // where n is some integer (for alignment), i is the block that i lives in,
     // and j is the slot in the block
     int slot_num = (uint64_t(p) % (64*sz)) / sz;
+
+    Block<sz> *blk = reinterpret_cast<Block<sz>*>
+      (static_cast<char*>(p) - slot_num*sz);
+
+    Slab<sz> *slab = blk->get_block_md()->start;
+
+    int block_num = ((uint64_t(blk)) - (uint64_t(slab->blocks))) / (64*sz);
+
     std::cout << "slot_num: " << slot_num << std::endl;
+    std::cout << "block_num: " << block_num << std::endl;
+
+    bit_set(blk->get_block_md()->free_slot_list, slot_num + 1);
+    bit_set(slab->get_slab_md()->free_block_list, block_num + 1);
   }
 
   void resize() {
