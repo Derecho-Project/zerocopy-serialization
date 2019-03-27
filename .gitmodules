@@ -1,0 +1,6 @@
+[submodule "old-slab-allocator/lib/Catch2"]
+	path = old-slab-allocator/lib/Catch2
+	url = https://github.com/catchorg/Catch2
+[submodule "old-slab-allocator/lib/benchmark"]
+	path = old-slab-allocator/lib/benchmark
+	url = https://github.com/google/benchmark

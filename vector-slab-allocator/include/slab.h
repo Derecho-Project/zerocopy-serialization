@@ -129,7 +129,7 @@ struct Slab {
   std::tuple<void*, bool, void*> allocate() {
     // Note: returns the position as 1-indexed from the right (LSB)
     int free_block_pos = ffsll(this->get_slab_md()->free_block_list);
-    void* ret;
+    void* ret = nullptr;
     bool is_full;
 
     if (free_block_pos > this->get_slab_md()->num_blocks) {
@@ -141,7 +141,7 @@ struct Slab {
     } else if (free_block_pos == 0) {
       // Couldn't find a free block in the free block list. Manually scan
       // through the remaining blocks to see if there is a free block
-      for (int i = 64; i < this->get_slab_md()->free_block_list; ++i) {
+      for (int i = 64; i < this->get_slab_md()->num_blocks; ++i) {
         if (!blocks[i].is_full()) {
           std::tie(ret, is_full) = blocks[i].find_free_slot();
           break;

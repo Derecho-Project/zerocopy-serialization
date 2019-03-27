@@ -6,6 +6,9 @@ struct Test {
   int id;
   char arr[64];
 
+  Test(int i) : id(i)
+  {}
+
   friend std::ostream& operator<<(std::ostream& os, Test &t) {
     return os << "{id = " << t.id << "; arr = " << (void*) t.arr << "}";
   }
