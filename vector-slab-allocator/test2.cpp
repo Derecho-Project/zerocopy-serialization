@@ -3,7 +3,7 @@
 #include <array>
 #include <iostream>
 
-using value_type = Test;
+using value_type = short;
 constexpr size_t sz = round_pow2(sizeof(value_type));
 
 int main(void)
@@ -28,7 +28,7 @@ int main(void)
     }
 
     entries[i] = (value_type*) ret;
-    (*(entries[i])).id = i;
+    *(entries[i]) = i;
     blocks = (Block<sz>*) new_blocks;
   }
 

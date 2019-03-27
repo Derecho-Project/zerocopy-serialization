@@ -16,7 +16,7 @@ void bit_clear(uint64_t& num, int n) {
 }
 
 void bit_set(uint64_t& num, int n) {
-  num |= 1ULL << (n-1);
+  num |= (1ULL << (n-1));
 }
 
 // Forward Declarations
