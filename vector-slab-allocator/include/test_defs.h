@@ -1,5 +1,6 @@
 #pragma once
 
+#include "slab.h"
 #include <iostream>
 #include <array>
 
@@ -7,7 +8,7 @@ struct Test {
   int id;
   std::array<char, 64> arr;
 
-  Test(int i) : id(i)
+  Test(int id) : id(id)
   {
     for (int j = 0; j < 64; ++j) {
       arr[j] = 'a' + (j % 26);
@@ -23,13 +24,5 @@ struct Test {
               << std::string(t.arr.begin(), t.arr.end()) << "}";
   }
 };
-
-constexpr size_t round_pow2(size_t sz) {
-  size_t rounded_size = 1;
-  while (rounded_size < sz) {
-    rounded_size <<= 1;
-  }
-  return rounded_size;
-}
 
 static_assert(round_pow2(sizeof(Test)) == 128, "");

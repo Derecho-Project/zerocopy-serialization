@@ -128,8 +128,17 @@ struct Block {
   }
 };
 
+constexpr size_t round_pow2(size_t sz) {
+  size_t rounded_size = 1;
+  while (rounded_size < sz) {
+    rounded_size <<= 1;
+  }
+  return rounded_size;
+}
+
 Slab::Slab(size_t s)
 {
+  assert(s == round_pow2(s) && "Slabs can only have sizes of powers of 2");
   posix_memalign((void**)&data, 64*s, 64*s);
   nth_block(0)->initialize_head(this, s);
   std::cout << "Slab starts at address " << (void*)this << std::endl;
