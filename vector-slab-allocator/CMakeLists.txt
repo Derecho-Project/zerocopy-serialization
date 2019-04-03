@@ -1,12 +1,9 @@
 cmake_minimum_required(VERSION 3.12)
 project(vector_slab_allocator)
 
-set(CMAKE_CXX_STANDARD 17)
-#set(CMAKE_CXX_COMPILER c++)
-
 add_compile_options(
-      "-Wall" "-Wpedantic" "-Wextra" "-fexceptions" "-stdlib=libc++"
-        "$<$<CONFIG:DEBUG>:-O0;-g3;-glldb>"
+    "-Wall" "-Wpedantic" "-Wextra" "-fexceptions" "-stdlib=libc++"
+    "-std=c++17" "$<$<CONFIG:DEBUG>:-O0;-g3;-glldb>"
     )
 
 add_executable(test1 tests/test1.cpp)

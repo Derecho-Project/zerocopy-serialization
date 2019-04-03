@@ -18,37 +18,18 @@ constexpr size_t log2_int_ceil(size_t n) {
   return exponent;
 }
 
-template<size_t s>
-struct slab_array : slab_array<s-1> {
-  using slab_array<s-1>::get;
-
-  Slab<pow2(s)>* this_slab;
-
-  Slab<pow2(s)>*& get(std::integral_constant<size_t, s>* = nullptr) {
-    return this_slab;
-  }
-};
-
-template<>
-struct slab_array<0> {
-  Slab<pow2(0)>* this_slab;
-
-  Slab<pow2(0)>*& get(std::integral_constant<size_t, 0>* = nullptr) {
-    return this_slab;
-  }
-};
-
-
 struct SlabAllocatorInternal {
   // Allows for slabs with slot size up to 2 << MAX_SLABS bytes
   static int constexpr MAX_SLABS = 40;
 
-  slab_array<MAX_SLABS-1> slabs;
+  std::array<Slab*, MAX_SLABS> slabs;
 
   std::mutex mux_slabs;
 
   ~SlabAllocatorInternal() {
-    // TODO: Delete all the slabs
+    for (Slab* slab : slabs) {
+      delete slab;
+    }
   }
 };
 
@@ -81,25 +62,25 @@ struct SlabAllocator {
   [[nodiscard]]
   value_type* allocate(size_t n)
   {
-    constexpr size_t exponent = log2_int_ceil(n * sizeof(value_type));
-    std::integral_constant<size_t, exponent> idx;
+    size_t exp = log2_int_ceil(n * sizeof(value_type));
+    std::cout << "exponent = " << exp << std::endl;
 
-    if (exponent >= internal->MAX_SLABS) {
+    if (exp >= internal->MAX_SLABS) {
       throw std::runtime_error("Tried to allocate an object that was too large");
     }
 
     // Create a new SingleAllocator the first time this particular
     // rounded_size is needed.
     // TODO: Replace lock with atomic bool
-    if (internal->slabs.get(&idx) == nullptr) {
+    if (internal->slabs[exp] == nullptr) {
       std::lock_guard<std::mutex> lock(internal->mux_slabs);
-      if (internal->slabs.get(&idx) == nullptr) {
-        internal->slabs.get(&idx) = new Slab<exponent>();
+      if (internal->slabs[exp] == nullptr) {
+        internal->slabs[exp] = new Slab(pow2(exp));
       }
     }
 
     // Find the correct allocator for this size and use it do allocation
-    Slab<exponent>* slab = internal->slabs.get(&idx);
+    Slab* slab = internal->slabs[exp];
     auto [p, unused1, unused2] = slab->allocate();
 
     return static_cast<value_type*>(p);
@@ -107,14 +88,13 @@ struct SlabAllocator {
 
   void deallocate(value_type* p, size_t n) noexcept
   {
-    constexpr size_t exponent = log2_int_ceil(n * sizeof(value_type));
-    std::integral_constant<size_t, exponent> idx;
+    size_t exp = log2_int_ceil(n * sizeof(value_type));
 
-    if (exponent >= internal->MAX_SLABS) {
+    if (exp >= internal->MAX_SLABS) {
       throw std::runtime_error("Tried to deallocate an object that coudn't have been allocated because it was too large");
     } else {
       // Find the correct allocator for this size and use it do allocation
-      Slab<exponent>* slab = internal->slabs.get(&idx);
+      Slab* slab = internal->slabs[exp];
       slab->deallocate(p);
     }
   }

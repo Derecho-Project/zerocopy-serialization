@@ -3,8 +3,8 @@
 ## Running the code
 I've been testing using the Homebrew version of clang (version 7.0.1).
 
-First, run `mkdir build` to create a directory where you will build everything.
-Then, `cd build` and run `$ cmake .. -DCMAKE_CXX_COMPILER=/usr/local/opt/llvm/bin/clang++ -DCMAKE_BUILD_TYPE=Release`
-Then, run `make` to compile all the tests.
-Finally, you can run some executables.
+You can run `./compile.sh` to run cmake and build all the executables. It's a
+simple file so I don't have to remember the CMake commands.
+Additionally, providing any argument to `./compile.sh` will produce a
+`.clang_complete` file used by my Spacemacs config.
 
