@@ -34,5 +34,7 @@
 # Build directory
 build
 
-# Vim related stuff
+# Misc
 tags
+.clang_complete
+
