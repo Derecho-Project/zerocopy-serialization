@@ -1,23 +1,14 @@
 #pragma once
 
 #include "slab.h"
+#include "fancy_pointer.h"
 
 // Computes 2^p
 constexpr size_t pow2(size_t p) {
-  return 2UL << p;
+  return 1UL << p;
 }
 
-// Compute ceil(log_2(n))
-constexpr size_t log2_int_ceil(size_t n) {
-  size_t rounded_size = 1;
-  size_t exponent = 0;
-  while (rounded_size < n) {
-    rounded_size <<= 1;
-    ++exponent;
-  }
-  return exponent;
-}
-
+// Internal data for a slab allocator
 struct SlabAllocatorInternal {
   // Allows for slabs with slot size up to 2 << MAX_SLABS bytes
   static int constexpr MAX_SLABS = 40;
@@ -33,15 +24,17 @@ struct SlabAllocatorInternal {
   }
 };
 
-
 template <typename T>
 struct SlabAllocator {
   using value_type = T;
-  using internals = SlabAllocatorInternal;
+  using pointer    = fancy_pointer<T>;
+  using internals  = SlabAllocatorInternal;
 
+  // Shared pointer for allocator internals so copy allocators is easy,
+  // and can be automatically cleaned up once all copies are gone
   std::shared_ptr<internals> internal;
 
-  // Constructor
+  // Default Constructor
   SlabAllocator() : internal(new internals())
   {}
 
@@ -60,17 +53,18 @@ struct SlabAllocator {
   {}
 
   [[nodiscard]]
-  value_type* allocate(size_t n)
+  pointer allocate(size_t n)
   {
+    printf("---------%s---------\n", __PRETTY_FUNCTION__);
     size_t exp = log2_int_ceil(n * sizeof(value_type));
-    std::cout << "exponent = " << exp << std::endl;
 
     if (exp >= internal->MAX_SLABS) {
-      throw std::runtime_error("Tried to allocate an object that was too large");
+      return nullptr;
+      //throw std::runtime_error("Tried to allocate an object that was too large");
     }
 
-    // Create a new SingleAllocator the first time this particular
-    // rounded_size is needed.
+    // Create a new SingleAllocator the first time this particular rounded_size
+    // is needed. Uses double-checked locking paradigm
     // TODO: Replace lock with atomic bool
     if (internal->slabs[exp] == nullptr) {
       std::lock_guard<std::mutex> lock(internal->mux_slabs);
@@ -83,19 +77,26 @@ struct SlabAllocator {
     Slab* slab = internal->slabs[exp];
     auto [p, unused1, unused2] = slab->allocate();
 
-    return static_cast<value_type*>(p);
+    auto ret = fancy_pointer<value_type>::pointer_to(*static_cast<value_type*>(p));
+    std::cout << "-------- Returning " << ret << " -----------" << std::endl;
+    return ret;
   }
 
-  void deallocate(value_type* p, size_t n) noexcept
+  void deallocate(pointer p, size_t n) noexcept
   {
+    if (p == nullptr) {
+      return;
+    }
     size_t exp = log2_int_ceil(n * sizeof(value_type));
 
     if (exp >= internal->MAX_SLABS) {
-      throw std::runtime_error("Tried to deallocate an object that coudn't have been allocated because it was too large");
+      return;
+      //throw std::runtime_error("Tried to deallocate an object that coudn't have been allocated because it was too large");
     } else {
       // Find the correct allocator for this size and use it do allocation
       Slab* slab = internal->slabs[exp];
-      slab->deallocate(p);
+      void *void_p = (static_cast<void*>(fancy_pointer<T>::to_address(p)));
+      slab->deallocate(void_p);
     }
   }
 };

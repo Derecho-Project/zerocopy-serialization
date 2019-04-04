@@ -10,9 +10,7 @@ struct Test {
 
   Test(int id) : id(id)
   {
-    for (int j = 0; j < 64; ++j) {
-      arr[j] = 'a' + (j % 26);
-    }
+    std::fill(arr.begin(), arr.end(), 'a');
   }
 
   friend bool operator==(Test const& lhs, Test const& rhs) {
@@ -21,7 +19,8 @@ struct Test {
 
   friend std::ostream& operator<<(std::ostream& os, Test &t) {
     return os << "{id = " << t.id << "; arr = "
-              << std::string(t.arr.begin(), t.arr.end()) << "}";
+              << std::string(t.arr.begin(), t.arr.end())
+              << " (" << (void*) &t.arr[0] <<  ") }";
   }
 };
 

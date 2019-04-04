@@ -1,46 +1,39 @@
 #include "slab.h"
+#include "fancy_pointer.h"
 #include "test_defs.h"
 #include <array>
 #include <iostream>
 #include <memory>
 
 // ==============================================================
-// = Test 1: Test Slab on it's own, manually rewriting pointers =
+// = Test Integration 4: Test Slabs with fancy pointers, so     =
+// = manual rewriting should not be necessary                   =
 // ==============================================================
 
 using value_type = Test;
+using pointer = fancy_pointer<value_type>;
 constexpr size_t sz = round_pow2(sizeof(value_type));
 
 int main(void)
 {
   Slab slab = Slab(sz);
 
-  int const arr_sz = 10;
-  char *blocks = slab.blocks;
-  std::array<value_type*, arr_sz> entries;
+  int const arr_sz = 1000;
+  std::array<pointer, arr_sz> entries;
 
   for (int i = 0; i < arr_sz; ++i) {
-    auto [ret, did_resize, new_blocks] = slab.allocate();
+    auto [ret, _1, _2] = slab.allocate();
 
-    // Rewrite pointers if necessary
-    if (did_resize) {
-      for (int j = 0; j < i; ++j) {
-        entries[j] = (value_type*) (
-              (char*)(entries[j]) +
-              ((uint64_t(new_blocks)) - (uint64_t(blocks)))
-        );
-      }
-    }
+    auto fp = pointer::pointer_to(*static_cast<value_type*>(ret));
 
-    entries[i] = (value_type*) ret;
+    entries[i] = fp;
     *(entries[i]) = i;
-    blocks = (char*) new_blocks;
   }
 
   for (int i = 0; i < arr_sz; ++i) {
     std::cout << "Pointer at " << i << ": " << (void*)&(*entries[i]) << std::endl;
     std::cout << "Element " << i << ": " << *(entries[i]) << std::endl;
     assert(*(entries[i]) == value_type(i) && "Value at ith entry was incorrect");
-    slab.deallocate(entries[i]);
+    slab.deallocate(pointer::to_address(entries[i]));
   }
 }

@@ -3,6 +3,10 @@
 #include <array>
 #include <iostream>
 
+// ==============================================================
+// = Test 2: Test Slab on it's own, manually rewriting pointers =
+// ==============================================================
+
 using value_type = short;
 constexpr size_t sz = round_pow2(sizeof(value_type));
 
@@ -10,26 +14,26 @@ int main(void)
 {
   Slab slab = Slab(sz);
 
-  int const arr_sz = 1000;
-  char *data = slab.data;
+  int const arr_sz = 100;
+  char *blocks = slab.blocks;
   std::array<value_type*, arr_sz> entries;
 
   for (int i = 0; i < arr_sz; ++i) {
-    auto [ret, did_resize, new_data] = slab.allocate();
+    auto [ret, did_resize, new_blocks] = slab.allocate();
 
     // Rewrite pointers if necessary
     if (did_resize) {
       for (int j = 0; j < i; ++j) {
         entries[j] = (value_type*) (
               (char*)(entries[j]) +
-              ((uint64_t(new_data)) - (uint64_t(data)))
+              ((uint64_t(new_blocks)) - (uint64_t(blocks)))
         );
       }
     }
 
     entries[i] = (value_type*) ret;
     *(entries[i]) = i;
-    data = (char*) new_data;
+    blocks = (char*) new_blocks;
   }
 
   for (int i = 0; i < arr_sz; ++i) {

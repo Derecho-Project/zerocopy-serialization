@@ -1,5 +1,7 @@
 #pragma once
 
+#include "slab_lookup_table.h"
+
 #include <array>
 #include <iostream>
 
@@ -25,18 +27,25 @@ struct BlockMD;
 struct Block;
 
 struct Slab {
-  char *data;
+  // A resize-able list of blocks
+  char *blocks;
 
+  // Create a slab with 64 slots, where each slot is [s] bytes
   Slab(size_t s);
 
+  // Get the metadata for this slab
   SlabMD* slab_md();
 
+  // Get the [n]th block for this slab
   Block* nth_block(size_t n);
 
+  // Return a pointer that can hold a value of (at most) size [slab_md()->sz]
   std::tuple<void*, bool, void*> allocate();
 
+  // Free [p] in this slab, so that this space can be allocated again
   void deallocate(void* p);
 
+  // Helper function to resize [blocks] once it gets full
   void resize();
 };
 
@@ -57,13 +66,20 @@ struct BlockMD {
   Slab *start;
   uint64_t free_slot_list;
 
+  // Create an invalid block metadata
   BlockMD()
     : start(nullptr), free_slot_list(-1ULL)
   { }
 
+  // Create metadata for a block, where the block belongs in the slab [s] and
+  // the size of its metadata is [md_sz].
+  // Note: [md_sz] is necessary because in a Slab, the first Block contains
+  // both slab metadata and block metadata, and all subsequent Blocks have
+  // only block metadata.
   BlockMD(Slab *s, size_t md_sz)
     : start(s), free_slot_list(-1ULL)
   {
+    // Mark, as not-free, the slots that have metadata
     int num_taken = std::max(1UL, md_sz / s->slab_md()->sz);
     for (int i = 0; i < num_taken; ++i) {
       bit_clear(free_slot_list, i+1);
@@ -71,6 +87,7 @@ struct BlockMD {
   }
 };
 
+// Union to ensure access to metadata is guaranteed by the compiler to be safe
 union Metadata {
   BlockMD block_md;
   struct {
@@ -79,6 +96,7 @@ union Metadata {
   } all_md;
 };
 
+// A large chunk of memory with 64 slots to store data
 struct Block {
   char data[];
 
@@ -98,22 +116,28 @@ struct Block {
     return block_md()->start->slab_md()->sz;
   }
 
+  // Initialize the first block in a list of blocks, which contains both
+  // slab AND block metadata
   void initialize_head(Slab *slab, int s) {
     Metadata* md = this->get_metadata();
     md->all_md.s = SlabMD(s);
     md->all_md.b = BlockMD(slab, sizeof(md->all_md));
   }
 
+  // Initialize subsequent blocks in a list of blocks, which only
+  // contains block metadata
   void initialize_tail(Slab *slab) {
     Metadata* md = this->get_metadata();
     md->block_md = BlockMD(slab, sizeof(md->block_md));
   }
 
+  // Check if this block is full, i.e. has no more free slots
   bool is_full() {
     return this->block_md()->free_slot_list == 0;
   }
 
-  // Returns the pointer into the actual data
+  // Returns a pointer into the block, where data of (at most) size
+  // [slab_md()->sz] can be stored
   std::pair<void*, bool> find_free_slot() {
     // Note: returns the position as 1-indexed from the right (LSB)
     BlockMD *bmd = this->block_md();
@@ -128,6 +152,7 @@ struct Block {
   }
 };
 
+// Round up to the nearest power of 2
 constexpr size_t round_pow2(size_t sz) {
   size_t rounded_size = 1;
   while (rounded_size < sz) {
@@ -136,20 +161,34 @@ constexpr size_t round_pow2(size_t sz) {
   return rounded_size;
 }
 
+// Compute ceil(log_2(n))
+constexpr size_t log2_int_ceil(size_t n) {
+  size_t rounded_size = 1;
+  size_t exponent = 0;
+  while (rounded_size < n) {
+    rounded_size <<= 1;
+    ++exponent;
+  }
+  return exponent;
+}
+
+
 Slab::Slab(size_t s)
 {
   assert(s == round_pow2(s) && "Slabs can only have sizes of powers of 2");
-  posix_memalign((void**)&data, 64*s, 64*s);
+  posix_memalign((void**)&blocks, 64*s, 64*s);
   nth_block(0)->initialize_head(this, s);
-  std::cout << "Slab starts at address " << (void*)this << std::endl;
+
+  slab_lookup_table[M_ID][log2_int_ceil(this->slab_md()->sz) + 1] =
+    reinterpret_cast<char*>(this);
 }
 
 Block* Slab::nth_block(size_t n) {
-  return reinterpret_cast<Block*>(&data[0] + (n * 64*this->slab_md()->sz));
+  return reinterpret_cast<Block*>(&blocks[0] + (n * 64*this->slab_md()->sz));
 }
 
 SlabMD* Slab::slab_md() {
-  return reinterpret_cast<Block*>(data)->slab_md();
+  return reinterpret_cast<Block*>(blocks)->slab_md();
 }
 
 std::tuple<void*, bool, void*> Slab::allocate() {
@@ -157,6 +196,7 @@ std::tuple<void*, bool, void*> Slab::allocate() {
   int free_block_pos = ffsll(this->slab_md()->free_block_list);
   void* ret = nullptr;
   bool is_full;
+
 
   if (free_block_pos > this->slab_md()->num_blocks) {
     // There are no more free blocks from the blocks we've already allocated,
@@ -193,7 +233,7 @@ std::tuple<void*, bool, void*> Slab::allocate() {
     }
   }
 
-  return {ret, false, data};
+  return {ret, false, blocks};
 }
 
 void Slab::deallocate(void* p) {
@@ -202,6 +242,7 @@ void Slab::deallocate(void* p) {
   //   = 64*sz*(n+i) + sz*j
   // where sz is the size of each block slot, n is some integer (for alignment),
   // i is the block that i lives in, and j is the slot in the block
+  assert(p != nullptr);
   int sz = this->slab_md()->sz;
   int slot_num = (uint64_t(p) % (64*sz)) / sz;
 
@@ -210,10 +251,7 @@ void Slab::deallocate(void* p) {
 
   Slab *slab = blk->block_md()->start;
 
-  int block_num = ((uint64_t(blk)) - (uint64_t(slab->data))) / (64*sz);
-
-  std::cout << "slot_num: " << slot_num << std::endl;
-  std::cout << "block_num: " << block_num << std::endl;
+  int block_num = ((uint64_t(blk)) - (uint64_t(slab->blocks))) / (64*sz);
 
   bit_set(blk->block_md()->free_slot_list, slot_num + 1);
   bit_set(slab->slab_md()->free_block_list, block_num + 1);
@@ -224,26 +262,29 @@ void Slab::resize() {
   int old_num_blocks = this->slab_md()->num_blocks;
   int new_num_blocks = 2 * old_num_blocks;
 
-  char *new_data;
+  char *new_blocks;
 
-  posix_memalign((void**)&new_data,
+  posix_memalign((void**)&new_blocks,
                  64*sz,
                  new_num_blocks * 64*sz);
 
-  // Copy all old data into new one
-  memcpy(new_data, data, old_num_blocks * 64*sz);
+  // Copy all old blocks into new one
+  memcpy(new_blocks, blocks, old_num_blocks * 64*sz);
 
   // Free the old blocks
-  free(data);
+  free(blocks);
 
   // Update the blocks in the Slab to now be the new blocks
-  data = new_data;
+  blocks = new_blocks;
 
-  // Update the number of blocks in the old data
+  // Update the number of blocks in the old blocks
   this->slab_md()->num_blocks = new_num_blocks;
 
   // Initialize all the new blocks we created
   for (int i = old_num_blocks; i < new_num_blocks; ++i) {
     this->nth_block(i)->initialize_tail(this);
   }
+
+  slab_lookup_table[M_ID][log2_int_ceil(this->slab_md()->sz) + 1] =
+    reinterpret_cast<char*>(this);
 }
