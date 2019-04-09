@@ -30,7 +30,7 @@ struct Slab {
   // A resize-able list of blocks
   char *blocks;
 
-  // Create a slab with 64 slots, where each slot is [s] bytes
+  // Create a slab of 1 block, where each slot in the block is [s] bytes
   Slab(size_t s);
 
   // Get the metadata for this slab
@@ -39,10 +39,19 @@ struct Slab {
   // Get the [n]th block for this slab
   Block* nth_block(size_t n);
 
-  // Return a pointer that can hold a value of (at most) size [slab_md()->sz]
+  /**
+     Return a tuple [(p, did_resize, new_blocks)] where:
+     - [p] is a pointer to a slot that can hold (at most) [slab_md()->sz] bytes
+     - [did_resize] is true if the blocks were resized, and false otherwise
+     - [new_blocks] is a pointer to the start of the blocks after calling this
+       function.
+       (note: [new_blocks] is only different from [this->blocks] if the blocks
+        had to resize)
+   */
   std::tuple<void*, bool, void*> allocate();
 
-  // Free [p] in this slab, so that this space can be allocated again
+  // Free [p] in this slab, so that the space can be allocated again
+  // Precondition: [p] must have been returned by a call to [this->allocate()]
   void deallocate(void* p);
 
   // Helper function to resize [blocks] once it gets full
@@ -50,8 +59,13 @@ struct Slab {
 };
 
 struct SlabMD {
+  // Size of each slot in the slab
   int sz;
+
+  // Number of blocks (currently allocated) in this slab
   int num_blocks;
+
+  // Bitmap showing which blocks are free (for the first 64 blocks)
   uint64_t free_block_list;
 
   SlabMD(int s) : sz(s), num_blocks(1), free_block_list(-1ULL)
@@ -63,7 +77,10 @@ struct SlabMD {
 };
 
 struct BlockMD {
+  // Pointer back to the slab that owns this block
   Slab *start;
+
+  // Bitmap showing which slots are free in this block
   uint64_t free_slot_list;
 
   // Create an invalid block metadata
@@ -136,8 +153,11 @@ struct Block {
     return this->block_md()->free_slot_list == 0;
   }
 
-  // Returns a pointer into the block, where data of (at most) size
-  // [slab_md()->sz] can be stored
+  // Returns a pair [(p, full)] where:
+  // - [p] is a pointer to the slot in the block, where (at most)
+  //   [slab_md()->sz] bytes can be stored
+  // - [full] is true if the block is full (i.e. no more free slots),
+  //   and false otherwise
   std::pair<void*, bool> find_free_slot() {
     // Note: returns the position as 1-indexed from the right (LSB)
     BlockMD *bmd = this->block_md();
@@ -148,7 +168,7 @@ struct Block {
 
     void *ret = &data[0] + (free_slot_pos - 1)*get_slot_sz();
 
-    return {ret, bmd->free_slot_list == 0};
+    return {ret, is_full()};
   }
 };
 
@@ -176,7 +196,9 @@ constexpr size_t log2_int_ceil(size_t n) {
 Slab::Slab(size_t s)
 {
   assert(s == round_pow2(s) && "Slabs can only have sizes of powers of 2");
+
   posix_memalign((void**)&blocks, 64*s, 64*s);
+
   nth_block(0)->initialize_head(this, s);
 
   slab_lookup_table[M_ID][log2_int_ceil(this->slab_md()->sz) + 1] =

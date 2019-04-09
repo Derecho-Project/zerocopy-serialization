@@ -56,15 +56,16 @@ struct SlabAllocator {
   pointer allocate(size_t n)
   {
     printf("---------%s---------\n", __PRETTY_FUNCTION__);
+    // The index into the array of slabs. The slab at this index is the
+    // slab that best fits the objects being allocated.
     size_t exp = log2_int_ceil(n * sizeof(value_type));
 
     if (exp >= internal->MAX_SLABS) {
-      return nullptr;
-      //throw std::runtime_error("Tried to allocate an object that was too large");
+      throw std::runtime_error("Tried to allocate an object that was too large");
     }
 
-    // Create a new SingleAllocator the first time this particular rounded_size
-    // is needed. Uses double-checked locking paradigm
+    // Create a new Slab the first time this particular slab is needed.
+    // Uses double-checked locking paradigm
     // TODO: Replace lock with atomic bool
     if (internal->slabs[exp] == nullptr) {
       std::lock_guard<std::mutex> lock(internal->mux_slabs);
@@ -73,11 +74,12 @@ struct SlabAllocator {
       }
     }
 
-    // Find the correct allocator for this size and use it do allocation
+    // Find the correct slab for this size and use it do allocation
     Slab* slab = internal->slabs[exp];
     auto [p, unused1, unused2] = slab->allocate();
 
-    auto ret = fancy_pointer<value_type>::pointer_to(*static_cast<value_type*>(p));
+    // Create a fancy pointer from the pointer allocated from the slab
+    auto ret = pointer::pointer_to(*static_cast<value_type*>(p));
     std::cout << "-------- Returning " << ret << " -----------" << std::endl;
     return ret;
   }
@@ -87,13 +89,16 @@ struct SlabAllocator {
     if (p == nullptr) {
       return;
     }
+    // The index into the array of slabs. The slab at this index is the
+    // slab that allocated [p].
     size_t exp = log2_int_ceil(n * sizeof(value_type));
 
     if (exp >= internal->MAX_SLABS) {
       return;
-      //throw std::runtime_error("Tried to deallocate an object that coudn't have been allocated because it was too large");
+      //throw std::runtime_error("Tried to deallocate an object that coudn't
+      // have been allocated because it was too large");
     } else {
-      // Find the correct allocator for this size and use it do allocation
+      // Find the correct slab for this size and use it do allocation
       Slab* slab = internal->slabs[exp];
       void *void_p = (static_cast<void*>(fancy_pointer<T>::to_address(p)));
       slab->deallocate(void_p);
