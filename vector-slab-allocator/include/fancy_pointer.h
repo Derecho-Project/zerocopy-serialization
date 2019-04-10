@@ -13,7 +13,6 @@
 
 #include "slab.h"
 #include "slab_lookup_table.h"
-#include "config.h"
 
 template<typename T>
 struct reference_helper {
