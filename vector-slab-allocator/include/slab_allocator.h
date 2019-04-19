@@ -76,7 +76,7 @@ struct SlabAllocator {
 
     // Find the correct slab for this size and use it do allocation
     Slab* slab = internal->slabs[exp];
-    auto [p, unused1, unused2] = slab->allocate();
+    void *p = slab->allocate();
 
     // Create a fancy pointer from the pointer allocated from the slab
     auto ret = pointer::pointer_to(*static_cast<value_type*>(p));
