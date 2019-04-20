@@ -122,6 +122,7 @@ struct BlockMD {
   Slab *start;
 
   // Bitmap showing which slots are free in this block
+  // 1 means slot is free, 0 means slot is used up.
   std::atomic<uint64_t> free_slot_list;
 
   // Create an invalid block metadata

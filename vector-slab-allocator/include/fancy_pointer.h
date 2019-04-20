@@ -88,7 +88,7 @@ struct fancy_pointer {
       }
     }
 
-    return fancy_pointer<T>(0, 0, (size_t) std::addressof(r));
+    return fancy_pointer<T>(M_ID, 0, (size_t) std::addressof(r));
   }
 
   explicit operator bool() const { return slab_lookup_table[m_id][s_id] != nullptr || s_id == 0; }

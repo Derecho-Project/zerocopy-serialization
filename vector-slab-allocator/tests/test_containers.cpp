@@ -11,7 +11,7 @@ int main(void) {
   int const container_sz = 10;
   //std::list<value_type> lst;
   SlabAllocator<std::pair<const value_type, value_type>> a;
-  std::map<value_type, value_type, std::less<>, SlabAllocator<std::pair<const value_type, value_type>>> m(a);
+  std::map<value_type, value_type, std::less<>, decltype(a)> m(a);
   //std::vector<value_type, SlabAllocator<value_type>> vec;
 
 
