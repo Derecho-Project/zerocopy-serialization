@@ -8,24 +8,17 @@
 using value_type = int;
 
 int main(void) {
-  int const container_sz = 10;
-  //std::list<value_type> lst;
-  SlabAllocator<std::pair<const value_type, value_type>> a;
-  std::map<value_type, value_type, std::less<>, SlabAllocator<std::pair<const value_type, value_type>>> m(a);
-  //std::vector<value_type, SlabAllocator<value_type>> vec;
+  size_t container_sz = 10;
+  SlabAllocator<std::list<int, SlabAllocator<int>>> container_alloc;
+  SlabAllocator<int> value_alloc{container_alloc};
+  std::list<int, SlabAllocator<int>>& lst = *container_alloc.allocate(1);
+  new (&lst) std::list<int, SlabAllocator<int>>(value_alloc);
 
-
-  for (int i = 0; i < container_sz; ++i) {
-    m.insert({value_type(i), value_type(i)});
-    //lst.insert(std::end(lst), value_type(i));
-    //vec.push_back(i);
+  for (size_t i = 0; i < container_sz; ++i) {
+    lst.push_back(i);
   }
 
-  //for (auto& n : vec) {
-  //  std::cout << n << std::endl;
-  //}
-
-  for (auto& kv : m) {
-  std::cout << kv.second << std::endl;
+  for (auto& n : lst) {
+    std::cout << n << std::endl;
   }
 }
