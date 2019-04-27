@@ -1,6 +1,7 @@
 #pragma once
 
 #include "slab_lookup_table.h"
+#include "lockfreequeue.h"
 
 #include <array>
 #include <iostream>
@@ -19,8 +20,8 @@ void bit_clear(uint64_t& num, int n) {
   num &= ~(1ULL << (n-1));
 }
 
-void bit_set(uint64_t& num, int n) {
-  num |= (1ULL << (n-1));
+void bit_set(std::atomic<uint64_t>& num, int n) {
+  num.fetch_or(1ULL << (n-1));
 }
 
 uint64_t bit_clear_copy(uint64_t& num, int n) {
@@ -36,48 +37,16 @@ struct SlabMD;
 struct BlockMD;
 struct Block;
 
-// struct BlockPtrQueue {
-//   struct Node {
-//     Block *data;
-//     Node *next;
-// 
-//     Node() : data(nullptr), next(nullptr)
-//     {}
-// 
-//     Node(Block *d, Node *n) : data(d), next(n)
-//     {}
-//   };
-// 
-//   Node *head;
-//   Node *tail;
-// 
-//   BlockPtrQueue() : head(nullptr), tail(nullptr)
-//   {}
-// 
-//   bool is_empty() {
-//     return (head == nullptr);
-//   }
-// 
-//   void enqueue(Block *item) {
-//     if (is_empty()) {
-//       head = new Node(item, )
-//     } else {
-//     }
-//   }
-// 
-//   Block* dequeue() {
-//   }
-// 
-// };
-
 struct Slab {
   // A resize-able list of blocks, and a shared mutex for it
   char *blocks;
   std::shared_mutex mux_blocks;
 
-  // A free list of blocks as a queue, with a mutex for it
-  std::queue<Block*> free_blocks;
-  std::mutex mux_free_blocks;
+  // Mutex to only allow a single thread calling [this->allocate()]
+  std::mutex mux_allocate;
+
+  // A free list of blocks as a queue
+  LowLockQueue<Block> free_blocks;
 
   // Create a slab of 1 block, where each slot in the block is [s] bytes
   Slab(size_t s);
@@ -93,7 +62,8 @@ struct Slab {
 
   // Free [p] in this slab, so that the space can be allocated again
   // Precondition: [p] must have been returned by a call to [this->allocate()]
-  void deallocate(void* p);
+  template <typename FancyPtr>
+  void deallocate(FancyPtr fp);
 
   // Helper function to resize [blocks] once it gets full
   void resize(std::shared_lock<std::shared_mutex>& lock);
@@ -140,9 +110,23 @@ struct BlockMD {
   {
     // Mark, as not-free, the slots that have metadata
     int num_taken = std::max(1UL, md_sz / s->slab_md()->sz);
+    uint64_t fsl = free_slot_list.load();
     for (int i = 0; i < num_taken; ++i) {
-      bit_clear(free_slot_list, i+1);
+      bit_clear(fsl, i+1);
     }
+    free_slot_list.fetch_and(fsl);
+  }
+
+  // Copy Constructor
+  BlockMD(const BlockMD& other)
+    : start(other.start), free_slot_list(other.free_slot_list.load())
+  { }
+
+  // Copy Assignment operator
+  BlockMD& operator=(const BlockMD& rhs) {
+    start = rhs.start;
+    free_slot_list = rhs.free_slot_list.load();
+    return *this;
   }
 };
 
@@ -261,95 +245,54 @@ SlabMD* Slab::slab_md() {
   return reinterpret_cast<Block*>(blocks)->slab_md();
 }
 
+
 void* Slab::allocate() {
-  void* ret = nullptr;
+  void *ret = nullptr;
 
-  // Continue trying to allocate until we succeed
-  while (ret != nullptr) {
-    // Grab a shared lock when trying to allocate
-    std::shared_lock lock(mux_blocks);
+  while (ret == nullptr) {
+    // Only allow one thread to allocate at a time
+    std::unique_lock allocate_lock(mux_allocate);
 
-    // Note: returns the position as 1-indexed from the right (LSB)
-    int free_block_pos = ffsll(this->slab_md()->free_block_list);
-    bool is_full;
+    // (I think) this shared lock is only necessary when there are multiple
+    // threads allocating. Multiple deallocators would need have a shared lock
+    // because of resizing, but only a single allocator wouldn't need to
+    // since they are the one doing the resizing
+    std::shared_lock s_lock(mux_blocks);
 
-    if (free_block_pos > this->slab_md()->num_blocks) {
-      // There are no more free blocks from the blocks we've already allocated,
-      // so we have to resize and try allocating again
-      this->resize(lock);
-      continue;
-    } else if (free_block_pos == 0) {
-      // Couldn't find a free block in the free block list. Manually scan
-      // through the remaining blocks to see if there is a free block
-      for (int i = 64; i < this->slab_md()->num_blocks; ++i) {
-        if (!nth_block(i)->is_full()) {
-          std::tie(ret, is_full) = nth_block(i)->find_free_slot();
-          break;
-        }
-      }
-
-      // Check to see if a block was actually found.
-      // If so, don't need to do anything else; there's nothing in the bitmap
-      //   to update, so just return ret
-      // If not, resize the blocks and try to allocate again.
-      if (ret == nullptr) {
-        this->resize(lock);
-        continue;
-      }
+    Block *blk = free_blocks.Peek();
+    if (blk == nullptr) {
+      this->resize(s_lock);
     } else {
-      // Found a free block in the free_block_list
-      std::tie(ret, is_full) = nth_block(free_block_pos - 1)->find_free_slot();
+      bool found_last_slot = false;
 
-      // Only clear bits in the free_block_list for blocks found
-      // in the free block list
-      if (is_full) {
-        bit_clear(this->slab_md()->free_block_list, free_block_pos);
+      // Found a free block in the free_block_list
+      std::tie(ret, found_last_slot) = blk->find_free_slot();
+
+      // "Delink"
+      if (found_last_slot) {
+        Block *del;
+        free_blocks.Consume(del);
       }
     }
-  } // End while (ret != nullptr)
+  }
 
   return ret;
 }
 
-void Slab::allocate2() {
-  void *ret = nullptr;
+template <typename FancyPtr>
+void Slab::deallocate(FancyPtr fp) {
+  // Need to get a read lock on the blocks so it doesn't change. We don't
+  // want the slab resizing on us as we're working on the block.
+  std::shared_lock lock(mux_blocks);
 
-  while (ret == nullptr) {
-    // Grab a shared lock when trying to allocate
-    std::shared_lock lock(mux_blocks);
-
-    mux_free_blocks.lock();
-    // TODO: Fix race condition here.
-    if (free_blocks.empty()) {
-      mux_free_blocks.unlock();
-      this->resize(lock);
-    } else {
-      Block *free_block = free_blocks.front();
-      mux_free_blocks.unlock();
-
-      bool found_last_slot = false;
-
-      // Found a free block in the free_block_list
-      std::tie(ret, found_last_slot) = free_block->find_free_slot();
-
-      // "Delink"
-      if (found_last_slot) {
-        // Lock the queue
-        std::unique_lock<std::mutex> lock(mux_free_blocks);
-        // - "delink", i.e. remove block from queue
-        free_blocks.pop();
-      }
-    }
-  }
-}
-
-void Slab::deallocate2(void* p) {
   // Pointers [p] have the form:
   // p = 64*sz*n + 64*sz*i + sz*j
   //   = 64*sz*(n+i) + sz*j
   // where sz is the size of each block slot, n is some integer (for alignment),
   // i is the block that i lives in, and j is the slot in the block
+  void *p = (static_cast<void*>(FancyPtr::to_address(fp)));
   assert(p != nullptr);
+
   int sz = this->slab_md()->sz;
   int slot_num = (uint64_t(p) % (64*sz)) / sz;
 
@@ -360,9 +303,9 @@ void Slab::deallocate2(void* p) {
 
   int block_num = ((uint64_t(blk)) - (uint64_t(slab->blocks))) / (64*sz);
 
+  bool freed_first_slot = false;
   uint64_t expected = blk->block_md()->free_slot_list.load();
 
-  bool freed_first_slot = false;
   while(!blk->block_md()->free_slot_list
         .compare_exchange_weak(expected, bit_set_copy(expected, slot_num + 1)))
   {
@@ -370,34 +313,8 @@ void Slab::deallocate2(void* p) {
   }
 
   if (freed_first_slot) {
-    // Lock the queue
-    std::unique_lock<std::mutex> lock(mux_free_blocks);
-    // - "relink", i.e. add block to queue
-    free_blocks.push(blk);
+    free_blocks.Produce(blk);
   }
-
-  // compare_exchange_strong(free_slot_list, bit_set_copy(free_slot_list, slot_num + 1));
-}
-
-void Slab::deallocate(void* p) {
-  // Pointers [p] have the form:
-  // p = 64*sz*n + 64*sz*i + sz*j
-  //   = 64*sz*(n+i) + sz*j
-  // where sz is the size of each block slot, n is some integer (for alignment),
-  // i is the block that i lives in, and j is the slot in the block
-  assert(p != nullptr);
-  int sz = this->slab_md()->sz;
-  int slot_num = (uint64_t(p) % (64*sz)) / sz;
-
-  Block *blk = reinterpret_cast<Block*>
-    (static_cast<char*>(p) - slot_num*sz);
-
-  Slab *slab = blk->block_md()->start;
-
-  int block_num = ((uint64_t(blk)) - (uint64_t(slab->blocks))) / (64*sz);
-
-  bit_set(blk->block_md()->free_slot_list, slot_num + 1);
-  bit_set(slab->slab_md()->free_block_list, block_num + 1);
 }
 
 void Slab::resize(std::shared_lock<std::shared_mutex>& s_lock) {
@@ -410,12 +327,11 @@ void Slab::resize(std::shared_lock<std::shared_mutex>& s_lock) {
 
   if (free_blocks.empty()) {
 
+    // Block until we obtain exclusive ownership of the blocks, at which
+    // point we can resize (if necessary)
     std::unique_lock<std::shared_mutex> u_lock(mux_blocks);
-    if (free_blocks.empty()) {
-      // Block until we obtain exclusive ownership of the blocks, at which
-      // point we can resize
-      std::unique_lock u_blocks_lock(mux_blocks);
 
+    if (free_blocks.empty()) {
       int sz = this->slab_md()->sz;
       int old_num_blocks = this->slab_md()->num_blocks;
       int new_num_blocks = 2 * old_num_blocks;
@@ -441,7 +357,7 @@ void Slab::resize(std::shared_lock<std::shared_mutex>& s_lock) {
       // Initialize all the new blocks we created
       for (int i = old_num_blocks; i < new_num_blocks; ++i) {
         this->nth_block(i)->initialize_tail(this);
-        free_blocks.push(this->nth_block(i));
+        free_blocks.Produce(this->nth_block(i));
       }
 
       slab_lookup_table[M_ID][log2_int_ceil(this->slab_md()->sz) + 1] =

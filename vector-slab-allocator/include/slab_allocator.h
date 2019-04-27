@@ -100,8 +100,7 @@ struct SlabAllocator {
     } else {
       // Find the correct slab for this size and use it do allocation
       Slab* slab = internal->slabs[exp];
-      void *void_p = (static_cast<void*>(fancy_pointer<T>::to_address(p)));
-      slab->deallocate(void_p);
+      slab->deallocate(p);
     }
   }
 };

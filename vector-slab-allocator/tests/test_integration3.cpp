@@ -24,7 +24,7 @@ int main(void)
   std::array<pointer, arr_sz> entries;
 
   for (int i = 0; i < arr_sz; ++i) {
-    auto [ret, _1, _2] = slab.allocate();
+    void *ret = slab.allocate();
 
     auto fp = pointer::pointer_to(*static_cast<value_type*>(ret));
 
@@ -36,6 +36,6 @@ int main(void)
     std::cout << "Pointer at " << i << ": " << (void*)&(*entries[i]) << std::endl;
     std::cout << "Element " << i << ": " << *(entries[i]) << std::endl;
     assert(*(entries[i]) == value_type(i) && "Value at ith entry was incorrect");
-    slab.deallocate(pointer::to_address(entries[i]));
+    slab.deallocate(entries[i]);
   }
 }

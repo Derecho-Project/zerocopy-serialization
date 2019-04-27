@@ -7,17 +7,17 @@ add_compile_options(
     )
 
 # Tests for just the slab
-add_executable(test1 tests/test1.cpp)
-target_include_directories(test1 PRIVATE include)
-
-add_executable(test2 tests/test2.cpp)
-target_include_directories(test2 PRIVATE include)
-
-add_executable(test3 tests/test3.cpp)
-target_include_directories(test3 PRIVATE include)
-
-add_executable(test4 tests/test4.cpp)
-target_include_directories(test4 PRIVATE include)
+# add_executable(test1 tests/test1.cpp)
+# target_include_directories(test1 PRIVATE include)
+# 
+# add_executable(test2 tests/test2.cpp)
+# target_include_directories(test2 PRIVATE include)
+# 
+# add_executable(test3 tests/test3.cpp)
+# target_include_directories(test3 PRIVATE include)
+# 
+# add_executable(test4 tests/test4.cpp)
+# target_include_directories(test4 PRIVATE include)
 
 # Tests for slab with fancy pointers
 add_executable(test_integration1 tests/test_integration1.cpp)
