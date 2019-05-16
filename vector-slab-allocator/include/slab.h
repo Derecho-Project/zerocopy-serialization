@@ -37,13 +37,15 @@ struct SlabMD;
 struct BlockMD;
 struct Block;
 
-struct Slab {
-  // A resize-able list of blocks, and a shared mutex for it
+struct Slab {// A resize-able list of blocks, and a shared mutex for it
   char *blocks;
   std::shared_mutex mux_blocks;
 
   // Mutex to only allow a single thread calling [this->allocate()]
   std::mutex mux_allocate;
+
+  // Slab ID
+  uint64_t id;
 
   // A free list of blocks as a queue
   LowLockQueue<Block> free_blocks;
@@ -233,8 +235,9 @@ Slab::Slab(size_t s)
 
   nth_block(0)->initialize_head(this, s);
 
-  slab_lookup_table[M_ID][log2_int_ceil(this->slab_md()->sz) + 1] =
-    reinterpret_cast<char*>(this);
+  this->id = slab_lookup_table[M_ID].insert(reinterpret_cast<char*>(this));
+  // slab_lookup_table[M_ID][log2_int_ceil(this->slab_md()->sz) + 1] =
+  //   reinterpret_cast<char*>(this);
 }
 
 Block* Slab::nth_block(size_t n) {
@@ -345,10 +348,9 @@ void Slab::resize(std::shared_lock<std::shared_mutex>& s_lock) {
       // Copy all old blocks into new one
       memcpy(new_blocks, blocks, old_num_blocks * 64*sz);
 
-      // Free the old blocks
-      free(blocks);
-
-      // Update the blocks in the Slab to now be the new blocks
+      // Update the blocks in the Slab to now be the new blocks, keeping
+      // the old block to be freed later
+      char* old_blocks = blocks;
       blocks = new_blocks;
 
       // Update the number of blocks in the old blocks
@@ -360,8 +362,10 @@ void Slab::resize(std::shared_lock<std::shared_mutex>& s_lock) {
         free_blocks.Produce(this->nth_block(i));
       }
 
-      slab_lookup_table[M_ID][log2_int_ceil(this->slab_md()->sz) + 1] =
-        reinterpret_cast<char*>(this);
+      slab_lookup_table[M_ID].update(this->id, new_blocks);
+
+      // Free the old blocks only once we've inserted into the slab lookup table
+      free(old_blocks);
     }
   }
 }
